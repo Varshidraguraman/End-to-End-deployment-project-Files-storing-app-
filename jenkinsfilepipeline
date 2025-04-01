@@ -1,0 +1,77 @@
+pipeline {
+    agent any
+    
+    tools {
+        jdk 'jdk17'
+        nodejs 'node16'
+        maven 'Maven' 
+    }
+
+    environment {
+        SONAR_SCANNER_HOME = tool 'sonar-scanner' 
+        DOCKER_REGISTRY = 'https://hub.docker.com/repositories/varshid'  
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'master', url: 'https://github.com/varshidraguraman/End-to-End-deployment-project'
+            }
+        }
+
+        stage('Maven Build') {
+            steps {
+                script {
+                    
+                    sh 'mvn clean package'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONARQUBE_TOKEN')]) {
+                    sh '''
+                        cd spring-boot-app
+                        mvn sonar:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=$SONARQUBE_TOKEN
+                    '''
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    
+                    sh 'cd spring-boot-app && docker build -t varshiddevops:latest .'
+                }
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                script {
+                    
+                    withCredentials([usernamePassword(credentialsId: 'docker-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                        sh "echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin ${DOCKER_REGISTRY}"
+                    }
+
+                    
+                    sh "docker push ${DOCKER_REGISTRY}/varshiddevops:latest"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully."
+        }
+        failure {
+            echo "Pipeline failed."
+        }
+        always {
+            cleanWs() 
+        }
+    }
+}
